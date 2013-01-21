@@ -37,10 +37,10 @@ function EnsureDbExists(){
      }
  }
 
- function BuildChangeString($changesetName, $nameOfFile)
- {
+ function BuildChangeString($changesetName, $nameOfFile){
     return "$changesetName/$nameOfFile"
  }
+
 ###################################################
 ## Script main start                             ##
 ###################################################
@@ -51,8 +51,7 @@ function EnsureDbExists(){
 
  $changesetFile = cat changesets.txt
 
- foreach($change in $changesetFile)
- { 
+ foreach($change in $changesetFile){ 
     $scriptpath = $MyInvocation.MyCommand.Path
     $dir = Split-Path $scriptpath
     $changeFilesSqlPattern = join-path $dir "changesets/$change/*.sql"
