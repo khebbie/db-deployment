@@ -9,6 +9,34 @@ $CreateChangesTableSql="if not exists (select * from sysobjects where name='db_c
 		ChangeDate DateTime not null
     )"
 
+function pSql_query($sql, $connectionString) 
+{
+    if(!$connectionString)
+    {
+        $connectionString = "Data Source=localhost;Initial Catalog=master;Integrated Security=True"
+    }
+    $ds = new-object "System.Data.DataSet"
+    $da = new-object "System.Data.SqlClient.SqlDataAdapter" ($sql, $connectionString)
+
+    $record_count = $da.Fill($ds)
+
+   $ds.Tables | Select-Object -Expand Rows
+}
+
+function pSql_execute_nonQuery($sql, $connectionString)
+{
+    if(!$connectionString)
+    {
+        $connectionString = "Data Source=localhost;Initial Catalog=master;Integrated Security=True"
+    }
+    $cn = new-object system.data.SqlClient.SqlConnection($connectionString)
+    $cmd = new-object system.data.SqlClient.SqlCommand($sql, $cn)
+    $cmd.CommandTimeout = 600
+    $cn.Open()
+    $cmd.ExecuteNonQuery()
+    $cn.Close()
+}
+
 function EnsureDbExists(){
     pSql_execute_nonQuery $CreateChangesTableSql $connectionString
  }
