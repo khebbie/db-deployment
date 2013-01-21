@@ -1,3 +1,7 @@
+#todo
+#add errors to db
+#
+
 $connectionString = "Data Source=wks-klh-1;Initial Catalog=ce-shop-drift;User ID=sa;Password=ExpandIT1;Packet Size=512"
 
 $CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
@@ -34,6 +38,11 @@ function EnsureDbExists(){
      $error[0]
      }
  }
+
+ function BuildChangeString($change, $filename)
+ {
+    return "$change/$filename"
+ }
 ###################################################
 ## Script main start                             ##
 ###################################################
@@ -51,11 +60,11 @@ function EnsureDbExists(){
 
     $alreadyRunScripts = GetAlreadyRunScripts
  
-    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains $_.Name }
+    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
  
     foreach($sqlFile in $sqlFilesToRun) {
         $filename = $sqlFile.Name
-        $changeSetAndFilename = "$change/$filename"
+        $changeSetAndFilename = BuildChangeString  $change $filename
         RunSqlFile $sqlFile $changeSetAndFilename
     }
  }
