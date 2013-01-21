@@ -39,9 +39,9 @@ function EnsureDbExists(){
      }
  }
 
- function BuildChangeString($change, $filename)
+ function BuildChangeString($changesetName, $nameOfFile)
  {
-    return "$change/$filename"
+    return "$changesetName/$nameOfFile"
  }
 ###################################################
 ## Script main start                             ##
@@ -51,20 +51,19 @@ function EnsureDbExists(){
 
  EnsureDbExists
 
- $changeFile = cat changesets.txt
+ $changesetFile = cat changesets.txt
 
- foreach($change in $changeFile)
+ foreach($change in $changesetFile)
  { 
-    $changeFilesSql = "changesets/$change/*.sql"
-    $sqlFiles = ls $changeFilesSql
+    $changeFilesSqlPattern = "changesets/$change/*.sql"
+    $sqlFiles = ls $changeFilesSqlPattern
 
     $alreadyRunScripts = GetAlreadyRunScripts
  
     $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
  
     foreach($sqlFile in $sqlFilesToRun) {
-        $filename = $sqlFile.Name
-        $changeSetAndFilename = BuildChangeString  $change $filename
+        $changeSetAndFilename = BuildChangeString  $change $sqlFile.Name
         RunSqlFile $sqlFile $changeSetAndFilename
     }
  }
