@@ -53,7 +53,10 @@ function EnsureDbExists(){
 
  foreach($change in $changesetFile)
  { 
-    $changeFilesSqlPattern = "changesets/$change/*.sql"
+    $scriptpath = $MyInvocation.MyCommand.Path
+    $dir = Split-Path $scriptpath
+    $changeFilesSqlPattern = join-path $dir "changesets/$change/*.sql"
+
     $sqlFiles = ls $changeFilesSqlPattern
 
     $alreadyRunScripts = GetAlreadyRunScripts
