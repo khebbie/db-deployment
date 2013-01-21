@@ -1,4 +1,5 @@
-==This page describe the update database script from the deployment process==
+This page describe the update database script from the deployment process
+==========================================================================
 
 In the deployment folder a file called "changesets" exists.
 In this file a list of directories exists. 
@@ -11,10 +12,12 @@ When a folder has been run once, it will not be run again in any future runs of 
 
 This means that when a changeset (folder) has been run, it will do no good adding a sql file to that folder, since it will not be run again.
 
-===Naming of sql files===
+Naming of sql files
+-------------------
 The files in a changeset folder are run in alphanumeric order, meaning that files beginning with 1,2,3, etc are run first. Then files beginning with a,b,c .. will be run
 
-===Example===
+Example
+-------
 
 So this folder structure could be one way of doing it
 <pre>
@@ -31,7 +34,8 @@ The changesets.txt would simply look like this:</br>
 CreateTable</br>
 AddColumnToTable</br> 
 
-===Internal Stuff===
+Internal Stuff
+--------------
 The script keeps track of which files have been run in a table called db_changes.
 If this table does not exist when the script is run, the script will create it.
 
