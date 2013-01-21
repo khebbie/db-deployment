@@ -1,5 +1,6 @@
 #todo
 #add errors to db
+#follow up on errors in the, for instance don't run a script with more than x errors
 
 $connectionString = $args[0]
 $CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
