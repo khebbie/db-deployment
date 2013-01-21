@@ -2,7 +2,6 @@
 #add errors to db
 #take connectionstring as parameter
 
-#$connectionString = "Data Source=wks-klh-1;Initial Catalog=ce-shop-drift;User ID=sa;Password=ExpandIT1;Packet Size=512"
 $connectionString = $args[0]
 $CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
     create table db_changes (
