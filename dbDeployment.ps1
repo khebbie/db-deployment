@@ -1,6 +1,6 @@
 #todo
 #add errors to db
-#
+#take connectionstring as parameter
 
 $connectionString = "Data Source=wks-klh-1;Initial Catalog=ce-shop-drift;User ID=sa;Password=ExpandIT1;Packet Size=512"
 
