@@ -31,6 +31,17 @@ function pSql_execute_nonQuery($sql, $cs)
     $cn.Close()
 }
 
+function pSql_execute_scalar($sql, $cs)
+{
+    $cn = new-object system.data.SqlClient.SqlConnection($cs)
+    $cmd = new-object system.data.SqlClient.SqlCommand($sql, $cn)
+    $cmd.CommandTimeout = 600
+    $cn.Open()
+    $result = $cmd.ExecuteScalar()
+    $cn.Close()
+    return $result
+}
+
 function EnsureDbExists(){
     $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder $connectionString
     $dbName = $builder.InitialCatalog
@@ -84,8 +95,26 @@ function ApplyChangeset ($change) {
     $alreadyRunScripts = GetAlreadyRunScripts
     $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
     foreach($sqlFile in $sqlFilesToRun) {
-        $changeSetAndFilename = BuildChangeString $change $sqlFile.Name
+        $sqlFileName = $sqlFile.Name
+        $changeSetAndFilename = BuildChangeString $change $sqlFileName
+        Write-Host "Applying changeset '$changeSetAndFilename'."
         RunSqlFile $sqlFile $changeSetAndFilename
+    }
+}
+
+function ApplyProcedures {
+    $objectType = "procedures"
+    $folder = Join-Path $scriptPath "$objectType/*.sql"
+    foreach ($file in (gci $folder)) {
+        $sql = cat $file
+        $name = $file.Name
+        $objectName = $name.Replace(".sql", "")
+        Write-Host "Applying procedure '$objectName'."
+        $countSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE' AND ROUTINE_NAME = '$objectName'"
+        $count = pSql_execute_scalar $countSql $connectionString
+        if ($count -eq 0) { $sql = $sql.Replace("ALTER PROCEDURE", "CREATE PROCEDURE") }
+        else { $sql = $sql.Replace("CREATE PROCEDURE", "ALTER PROCEDURE") }
+        pSql_execute_nonQuery $sql $connectionString
     }
 }
 
@@ -100,3 +129,4 @@ Write-Host "Script path: $scriptPath"
 
 EnsureDbExists
 ApplyChangesets
+ApplyProcedures
