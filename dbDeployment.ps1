@@ -9,10 +9,20 @@ param(
 
 $CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
     create table db_changes (
-        ChangeSet varchar(255) not null,
-		ChangeDate DateTime not null
+        ChangeSet  varchar(255)  NOT NULL
+            CONSTRAINT PK_db_changes PRIMARY KEY
+		, ChangeDate  DateTime  NOT NULL
     )"
 
+$CreateObjectsTableSql="if not exists (select * from sysobjects where name='db_objects' and xtype='U')
+    create table db_objects (
+        ObjectType  varchar(100)  NOT NULL
+        , ObjectName  varchar(200)  NOT NULL
+        , ObjectSql  nvarchar(max)  NOT NULL
+		, ChangeDate  datetime  NOT NULL
+        , CONSTRAINT PK_db_objects PRIMARY KEY (ObjectType, ObjectName)
+    )"
+    
 function pSql_query($sql, $cs) 
 {
     $ds = new-object "System.Data.DataSet"
@@ -21,11 +31,16 @@ function pSql_query($sql, $cs)
    $ds.Tables | Select-Object -Expand Rows
 }
 
-function pSql_execute_nonQuery($sql, $cs)
+function pSql_execute_nonQuery($sql, $cs, $params = @{})
 {
     $cn = new-object system.data.SqlClient.SqlConnection($cs)
     $cmd = new-object system.data.SqlClient.SqlCommand($sql, $cn)
     $cmd.CommandTimeout = 600
+    foreach ($param in $params.GetEnumerator()) {
+        $name = $param.Name
+        [string]$value = $param.Value
+        $dummy = $cmd.Parameters.AddWithValue($name, $value)
+    }
     $cn.Open()
     $rowsAffected = $cmd.ExecuteNonQuery()
     $cn.Close()
@@ -50,6 +65,7 @@ function EnsureDbExists(){
     $master = $builder.ConnectionString
     pSql_execute_nonQuery $createDbSql $master
     pSql_execute_nonQuery $CreateChangesTableSql $connectionString
+    pSql_execute_nonQuery $CreateObjectsTableSql $connectionString
  }
 
  function GetAlreadyRunScripts(){
@@ -106,15 +122,34 @@ function ApplyProcedures {
     $objectType = "procedures"
     $folder = Join-Path $scriptPath "$objectType/*.sql"
     foreach ($file in (gci $folder)) {
-        $sql = cat $file
+        $objectSql = cat $file
         $name = $file.Name
         $objectName = $name.Replace(".sql", "")
+        $previousSql = "SELECT ObjectSql FROM db_objects WHERE ObjectType = '$objectType' AND ObjectName = '$objectName'"
+        $previous = pSql_execute_scalar $previousSql $connectionString
+        if ($previous -eq $objectSql) { continue }
+
         Write-Host "Applying procedure '$objectName'."
         $countSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE' AND ROUTINE_NAME = '$objectName'"
         $count = pSql_execute_scalar $countSql $connectionString
-        if ($count -eq 0) { $sql = $sql.Replace("ALTER PROCEDURE", "CREATE PROCEDURE") }
-        else { $sql = $sql.Replace("CREATE PROCEDURE", "ALTER PROCEDURE") }
+        if ($count -eq 0) { $sql = $objectSql.Replace("ALTER PROCEDURE", "CREATE PROCEDURE") }
+        else { $sql = $objectSql.Replace("CREATE PROCEDURE", "ALTER PROCEDURE") }
         pSql_execute_nonQuery $sql $connectionString
+
+        $insertObjectSql = "
+IF EXISTS (SELECT * FROM db_objects WHERE ObjectType = @objectType AND ObjectName = @objectName)
+    UPDATE db_objects
+    SET ObjectSql = @objectSql
+        , ChangeDate = GETDATE()
+ELSE
+    INSERT INTO db_objects
+    (ObjectType, ObjectName, ObjectSql, ChangeDate)
+    VALUES (@objectType, @objectName, @objectSql, GETDATE())"
+        $params = @{}
+        $params.Add("ObjectType", $objectType)
+        $params.Add("ObjectName", $objectName)
+        $params.Add("ObjectSql", $objectSql)
+        pSql_execute_nonQuery $insertObjectSql $connectionString $params
     }
 }
 
