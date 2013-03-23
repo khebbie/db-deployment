@@ -7,14 +7,14 @@ param(
 #add errors to db
 #follow up on errors in the, for instance don't run a script with more than x errors
 
-$CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
+$CreateChangesTableSql="if not exists (select * from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'db_changes')
     create table db_changes (
         ChangeSet  varchar(255)  NOT NULL
             CONSTRAINT PK_db_changes PRIMARY KEY
 		, ChangeDate  DateTime  NOT NULL
     )"
 
-$CreateObjectsTableSql="if not exists (select * from sysobjects where name='db_objects' and xtype='U')
+$CreateObjectsTableSql="if not exists (select * from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'db_objects')
     create table db_objects (
         ObjectType  varchar(100)  NOT NULL
         , ObjectName  varchar(200)  NOT NULL
@@ -118,6 +118,39 @@ function ApplyChangeset ($change) {
     }
 }
 
+function LogObject ($objectType, $objectName, $objectSql) {
+    $insertObjectSql = "
+IF EXISTS (SELECT * FROM db_objects WHERE ObjectType = @objectType AND ObjectName = @objectName)
+UPDATE db_objects
+SET ObjectSql = @objectSql
+    , ChangeDate = GETDATE()
+ELSE
+INSERT INTO db_objects
+(ObjectType, ObjectName, ObjectSql, ChangeDate)
+VALUES (@objectType, @objectName, @objectSql, GETDATE())"
+    $params = @{}
+    $params.Add("ObjectType", $objectType)
+    $params.Add("ObjectName", $objectName)
+    $params.Add("ObjectSql", $objectSql)
+    pSql_execute_nonQuery $insertObjectSql $connectionString $params
+}
+
+function HasObjectChanged ($objectType, $objectName, $objectSql) {
+    $previousSql = "SELECT ObjectSql FROM db_objects WHERE ObjectType = '$objectType' AND ObjectName = '$objectName'"
+    $previous = pSql_execute_scalar $previousSql $connectionString
+    if ($previous -eq $objectSql) { return $false }
+    return $true
+}
+
+function ApplyProcedure ($objectType, $objectName, $objectSql) {
+    Write-Host "Applying procedure '$objectName'."
+    $countSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE' AND ROUTINE_NAME = '$objectName'"
+    $count = pSql_execute_scalar $countSql $connectionString
+    if ($count -eq 0) { $sql = $objectSql.Replace("ALTER PROCEDURE", "CREATE PROCEDURE") }
+    else { $sql = $objectSql.Replace("CREATE PROCEDURE", "ALTER PROCEDURE") }
+    pSql_execute_nonQuery $sql $connectionString
+}
+
 function ApplyProcedures {
     $objectType = "procedures"
     $folder = Join-Path $scriptPath "$objectType/*.sql"
@@ -125,31 +158,11 @@ function ApplyProcedures {
         $objectSql = cat $file
         $name = $file.Name
         $objectName = $name.Replace(".sql", "")
-        $previousSql = "SELECT ObjectSql FROM db_objects WHERE ObjectType = '$objectType' AND ObjectName = '$objectName'"
-        $previous = pSql_execute_scalar $previousSql $connectionString
-        if ($previous -eq $objectSql) { continue }
+        
+        if (!(HasObjectChanged $objectType $objectName $objectSql)) { continue }
 
-        Write-Host "Applying procedure '$objectName'."
-        $countSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE' AND ROUTINE_NAME = '$objectName'"
-        $count = pSql_execute_scalar $countSql $connectionString
-        if ($count -eq 0) { $sql = $objectSql.Replace("ALTER PROCEDURE", "CREATE PROCEDURE") }
-        else { $sql = $objectSql.Replace("CREATE PROCEDURE", "ALTER PROCEDURE") }
-        pSql_execute_nonQuery $sql $connectionString
-
-        $insertObjectSql = "
-IF EXISTS (SELECT * FROM db_objects WHERE ObjectType = @objectType AND ObjectName = @objectName)
-    UPDATE db_objects
-    SET ObjectSql = @objectSql
-        , ChangeDate = GETDATE()
-ELSE
-    INSERT INTO db_objects
-    (ObjectType, ObjectName, ObjectSql, ChangeDate)
-    VALUES (@objectType, @objectName, @objectSql, GETDATE())"
-        $params = @{}
-        $params.Add("ObjectType", $objectType)
-        $params.Add("ObjectName", $objectName)
-        $params.Add("ObjectSql", $objectSql)
-        pSql_execute_nonQuery $insertObjectSql $connectionString $params
+        ApplyProcedure $objectType $objectName $objectSql
+        LogObject $objectType $objectName $objectSql
     }
 }
 
