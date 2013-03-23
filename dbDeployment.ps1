@@ -1,39 +1,33 @@
+param(
+    $connectionString = "Data Source=.;Initial Catalog=MyDatabase;Integrated Security=True",
+    $scriptpath = (Resolve-Path .)
+)
+
 #todo
 #add errors to db
 #follow up on errors in the, for instance don't run a script with more than x errors
 
-$connectionString = $args[0]
 $CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
     create table db_changes (
         ChangeSet varchar(255) not null,
 		ChangeDate DateTime not null
     )"
 
-function pSql_query($sql, $connectionString) 
+function pSql_query($sql, $cs) 
 {
-    if(!$connectionString)
-    {
-        $connectionString = "Data Source=localhost;Initial Catalog=master;Integrated Security=True"
-    }
     $ds = new-object "System.Data.DataSet"
-    $da = new-object "System.Data.SqlClient.SqlDataAdapter" ($sql, $connectionString)
-
+    $da = new-object "System.Data.SqlClient.SqlDataAdapter" ($sql, $cs)
     $record_count = $da.Fill($ds)
-
    $ds.Tables | Select-Object -Expand Rows
 }
 
-function pSql_execute_nonQuery($sql, $connectionString)
+function pSql_execute_nonQuery($sql, $cs)
 {
-    if(!$connectionString)
-    {
-        $connectionString = "Data Source=localhost;Initial Catalog=master;Integrated Security=True"
-    }
-    $cn = new-object system.data.SqlClient.SqlConnection($connectionString)
+    $cn = new-object system.data.SqlClient.SqlConnection($cs)
     $cmd = new-object system.data.SqlClient.SqlCommand($sql, $cn)
     $cmd.CommandTimeout = 600
     $cn.Open()
-    $cmd.ExecuteNonQuery()
+    $rowsAffected = $cmd.ExecuteNonQuery()
     $cn.Close()
 }
 
@@ -82,14 +76,15 @@ function EnsureDbExists(){
 
  cls
 
+Write-Host "Connection string: $connectionString"
+Write-Host "Script path: $scriptPath"
+
  EnsureDbExists
 
  $changesetFile = cat changesets.txt
 
  foreach($change in $changesetFile){ 
-    $scriptpath = $MyInvocation.MyCommand.Path
-    $dir = Split-Path $scriptpath
-    $changeFilesSqlPattern = join-path $dir "changesets/$change/*.sql"
+    $changeFilesSqlPattern = join-path $scriptpath "changesets/$change/*.sql"
 
     $sqlFiles = ls $changeFilesSqlPattern
 
