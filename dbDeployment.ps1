@@ -38,6 +38,12 @@ function pSql_execute_nonQuery($sql, $connectionString)
 }
 
 function EnsureDbExists(){
+    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder $connectionString
+    $dbName = $builder.InitialCatalog
+    $builder.set_InitialCatalog("master")
+    $createDbSql = "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '$dbName') CREATE DATABASE $dbName"
+    $master = $builder.ConnectionString
+    pSql_execute_nonQuery $createDbSql $master
     pSql_execute_nonQuery $CreateChangesTableSql $connectionString
  }
 
