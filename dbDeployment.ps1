@@ -70,30 +70,33 @@ function EnsureDbExists(){
     return "$changesetName/$nameOfFile"
  }
 
+function ApplyChangesets {
+    $changesetFilePath = join-path $scriptpath "changesets.txt"
+    $changesetFile = cat $changesetFilePath
+    foreach($change in $changesetFile){ 
+        ApplyChangeset $change
+    }
+}
+ 
+function ApplyChangeset ($change) {
+    $changeFilesSqlPattern = join-path $scriptpath "changesets/$change/*.sql"
+    $sqlFiles = ls $changeFilesSqlPattern
+    $alreadyRunScripts = GetAlreadyRunScripts
+    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
+    foreach($sqlFile in $sqlFilesToRun) {
+        $changeSetAndFilename = BuildChangeString $change $sqlFile.Name
+        RunSqlFile $sqlFile $changeSetAndFilename
+    }
+}
+
 ###################################################
 ## Script main start                             ##
 ###################################################
 
- cls
+cls
 
 Write-Host "Connection string: $connectionString"
 Write-Host "Script path: $scriptPath"
 
- EnsureDbExists
-
- $changesetFile = cat changesets.txt
-
- foreach($change in $changesetFile){ 
-    $changeFilesSqlPattern = join-path $scriptpath "changesets/$change/*.sql"
-
-    $sqlFiles = ls $changeFilesSqlPattern
-
-    $alreadyRunScripts = GetAlreadyRunScripts
- 
-    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
- 
-    foreach($sqlFile in $sqlFilesToRun) {
-        $changeSetAndFilename = BuildChangeString  $change $sqlFile.Name
-        RunSqlFile $sqlFile $changeSetAndFilename
-    }
- }
+EnsureDbExists
+ApplyChangesets
