@@ -1,6 +1,7 @@
 param(
     $connectionString = "Data Source=.;Initial Catalog=MyDatabase;Integrated Security=True",
-    $scriptpath = (Resolve-Path .)
+    $scriptpath = (Resolve-Path .),
+    $clearScreenOnStart = $true
 )
 
 #todo
@@ -28,7 +29,7 @@ function pSql_query($sql, $cs)
     $ds = new-object "System.Data.DataSet"
     $da = new-object "System.Data.SqlClient.SqlDataAdapter" ($sql, $cs)
     $record_count = $da.Fill($ds)
-   $ds.Tables | Select-Object -Expand Rows
+    $ds.Tables | Select-Object -Expand Rows
 }
 
 function pSql_execute_nonQuery($sql, $cs, $params = @{})
@@ -153,8 +154,10 @@ function ApplyProcedure ($objectType, $objectName, $objectSql) {
 
 function ApplyProcedures {
     $objectType = "procedures"
-    $folder = Join-Path $scriptPath "$objectType/*.sql"
-    foreach ($file in (gci $folder)) {
+    $folder = Join-Path $scriptPath $objectType
+    if (!(Test-Path $folder)) { return }
+    $pattern = Join-Path $folder "*.sql"
+    foreach ($file in (gci $pattern)) {
         $objectSql = cat $file
         $name = $file.Name
         $objectName = $name.Replace(".sql", "")
@@ -170,7 +173,7 @@ function ApplyProcedures {
 ## Script main start                             ##
 ###################################################
 
-cls
+if ($clearScreenOnStart -eq $true) { cls }
 
 Write-Host "Connection string: $connectionString"
 Write-Host "Script path: $scriptPath"
