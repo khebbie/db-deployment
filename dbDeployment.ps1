@@ -62,7 +62,7 @@ function EnsureDbExists(){
     $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder $connectionString
     $dbName = $builder.InitialCatalog
     $builder.set_InitialCatalog("master")
-    $createDbSql = "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '$dbName') CREATE DATABASE $dbName"
+    $createDbSql = "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '$dbName') CREATE DATABASE [$dbName]"
     $master = $builder.ConnectionString
     pSql_execute_nonQuery $createDbSql $master
     pSql_execute_nonQuery $CreateChangesTableSql $connectionString
@@ -70,14 +70,21 @@ function EnsureDbExists(){
  }
 
  function GetAlreadyRunScripts(){
-    pSql_query "select ChangeSet  from db_changes" $connectionString
+    $alreadyRunScripts = pSql_query "select ChangeSet  from db_changes" $connectionString
+    $retval = @()
+    foreach($script in $alreadyRunScripts)
+    {
+        $retval += $script.ChangeSet
+    }
+    
+    $retval
  }
 
  function MarkScriptAsRun($file) {
     pSql_execute_nonQuery "insert into db_changes (ChangeSet, ChangeDate) values ('$file', GETDATE())" $connectionString
  }
 
- function RunSqlFile($file, $nameToMark) {
+ function RunSqlFile($file, $nameToMark) {      
     $content = cat $file 
     if([string]::IsNullOrEmpty($content))
     {
@@ -110,16 +117,21 @@ function ApplyChangeset ($change) {
     $changeFilesSqlPattern = join-path $scriptpath "changesets/$change/*.sql"
     $sqlFiles = ls $changeFilesSqlPattern
     $alreadyRunScripts = GetAlreadyRunScripts
-    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
-    if($sqlFilesToRun.Count -gt 0)
-    {
+    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts -notcontains (BuildChangeString $change $_.Name)}
+    
+    
         foreach($sqlFile in $sqlFilesToRun) {
             $sqlFileName = $sqlFile.Name
             $changeSetAndFilename = BuildChangeString $change $sqlFileName
+            if([string]::IsNullOrEmpty($sqlFile))
+            {
+                continue
+            }
             Write-Host "Applying changeset '$changeSetAndFilename'."
             RunSqlFile $sqlFile $changeSetAndFilename
         }
-    }
+    
+    
 }
 
 function LogObject ($objectType, $objectName, $objectSql) {
