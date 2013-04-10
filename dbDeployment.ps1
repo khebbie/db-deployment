@@ -1,44 +1,72 @@
+param(
+    $connectionString = "Data Source=.;Initial Catalog=MyDatabase;Integrated Security=True",
+    $scriptpath = (Resolve-Path .),
+    $clearScreenOnStart = $true
+)
+
 #todo
 #add errors to db
 #follow up on errors in the, for instance don't run a script with more than x errors
 
-$connectionString = $args[0]
-$CreateChangesTableSql="if not exists (select * from sysobjects where name='db_changes' and xtype='U')
+$CreateChangesTableSql="if not exists (select * from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'db_changes')
     create table db_changes (
-        ChangeSet varchar(255) not null,
-		ChangeDate DateTime not null
+        ChangeSet  varchar(255)  NOT NULL
+            CONSTRAINT PK_db_changes PRIMARY KEY
+		, ChangeDate  DateTime  NOT NULL
     )"
 
-function pSql_query($sql, $connectionString) 
+$CreateObjectsTableSql="if not exists (select * from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'db_objects')
+    create table db_objects (
+        ObjectType  varchar(100)  NOT NULL
+        , ObjectName  varchar(200)  NOT NULL
+        , ObjectSql  nvarchar(max)  NOT NULL
+		, ChangeDate  datetime  NOT NULL
+        , CONSTRAINT PK_db_objects PRIMARY KEY (ObjectType, ObjectName)
+    )"
+    
+function pSql_query($sql, $cs) 
 {
-    if(!$connectionString)
-    {
-        $connectionString = "Data Source=localhost;Initial Catalog=master;Integrated Security=True"
-    }
     $ds = new-object "System.Data.DataSet"
-    $da = new-object "System.Data.SqlClient.SqlDataAdapter" ($sql, $connectionString)
-
+    $da = new-object "System.Data.SqlClient.SqlDataAdapter" ($sql, $cs)
     $record_count = $da.Fill($ds)
-
-   $ds.Tables | Select-Object -Expand Rows
+    $ds.Tables | Select-Object -Expand Rows
 }
 
-function pSql_execute_nonQuery($sql, $connectionString)
+function pSql_execute_nonQuery($sql, $cs, $params = @{})
 {
-    if(!$connectionString)
-    {
-        $connectionString = "Data Source=localhost;Initial Catalog=master;Integrated Security=True"
-    }
-    $cn = new-object system.data.SqlClient.SqlConnection($connectionString)
+    $cn = new-object system.data.SqlClient.SqlConnection($cs)
     $cmd = new-object system.data.SqlClient.SqlCommand($sql, $cn)
     $cmd.CommandTimeout = 600
+    foreach ($param in $params.GetEnumerator()) {
+        $name = $param.Name
+        [string]$value = $param.Value
+        $dummy = $cmd.Parameters.AddWithValue($name, $value)
+    }
     $cn.Open()
-    $cmd.ExecuteNonQuery()
+    $rowsAffected = $cmd.ExecuteNonQuery()
     $cn.Close()
 }
 
+function pSql_execute_scalar($sql, $cs)
+{
+    $cn = new-object system.data.SqlClient.SqlConnection($cs)
+    $cmd = new-object system.data.SqlClient.SqlCommand($sql, $cn)
+    $cmd.CommandTimeout = 600
+    $cn.Open()
+    $result = $cmd.ExecuteScalar()
+    $cn.Close()
+    return $result
+}
+
 function EnsureDbExists(){
+    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder $connectionString
+    $dbName = $builder.InitialCatalog
+    $builder.set_InitialCatalog("master")
+    $createDbSql = "IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = '$dbName') CREATE DATABASE $dbName"
+    $master = $builder.ConnectionString
+    pSql_execute_nonQuery $createDbSql $master
     pSql_execute_nonQuery $CreateChangesTableSql $connectionString
+    pSql_execute_nonQuery $CreateObjectsTableSql $connectionString
  }
 
  function GetAlreadyRunScripts(){
@@ -70,29 +98,86 @@ function EnsureDbExists(){
     return "$changesetName/$nameOfFile"
  }
 
+function ApplyChangesets {
+    $changesetFilePath = join-path $scriptpath "changesets.txt"
+    $changesetFile = cat $changesetFilePath
+    foreach($change in $changesetFile){ 
+        ApplyChangeset $change
+    }
+}
+ 
+function ApplyChangeset ($change) {
+    $changeFilesSqlPattern = join-path $scriptpath "changesets/$change/*.sql"
+    $sqlFiles = ls $changeFilesSqlPattern
+    $alreadyRunScripts = GetAlreadyRunScripts
+    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
+    foreach($sqlFile in $sqlFilesToRun) {
+        $sqlFileName = $sqlFile.Name
+        $changeSetAndFilename = BuildChangeString $change $sqlFileName
+        Write-Host "Applying changeset '$changeSetAndFilename'."
+        RunSqlFile $sqlFile $changeSetAndFilename
+    }
+}
+
+function LogObject ($objectType, $objectName, $objectSql) {
+    $insertObjectSql = "
+IF EXISTS (SELECT * FROM db_objects WHERE ObjectType = @objectType AND ObjectName = @objectName)
+UPDATE db_objects
+SET ObjectSql = @objectSql
+    , ChangeDate = GETDATE()
+ELSE
+INSERT INTO db_objects
+(ObjectType, ObjectName, ObjectSql, ChangeDate)
+VALUES (@objectType, @objectName, @objectSql, GETDATE())"
+    $params = @{}
+    $params.Add("ObjectType", $objectType)
+    $params.Add("ObjectName", $objectName)
+    $params.Add("ObjectSql", $objectSql)
+    pSql_execute_nonQuery $insertObjectSql $connectionString $params
+}
+
+function HasObjectChanged ($objectType, $objectName, $objectSql) {
+    $previousSql = "SELECT ObjectSql FROM db_objects WHERE ObjectType = '$objectType' AND ObjectName = '$objectName'"
+    $previous = pSql_execute_scalar $previousSql $connectionString
+    if ($previous -eq $objectSql) { return $false }
+    return $true
+}
+
+function ApplyProcedure ($objectType, $objectName, $objectSql) {
+    Write-Host "Applying procedure '$objectName'."
+    $countSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE = 'PROCEDURE' AND ROUTINE_NAME = '$objectName'"
+    $count = pSql_execute_scalar $countSql $connectionString
+    if ($count -eq 0) { $sql = $objectSql.Replace("ALTER PROCEDURE", "CREATE PROCEDURE") }
+    else { $sql = $objectSql.Replace("CREATE PROCEDURE", "ALTER PROCEDURE") }
+    pSql_execute_nonQuery $sql $connectionString
+}
+
+function ApplyProcedures {
+    $objectType = "procedures"
+    $folder = Join-Path $scriptPath $objectType
+    if (!(Test-Path $folder)) { return }
+    $pattern = Join-Path $folder "*.sql"
+    foreach ($file in (gci $pattern)) {
+        $objectSql = cat $file
+        $name = $file.Name
+        $objectName = $name.Replace(".sql", "")
+        
+        if (!(HasObjectChanged $objectType $objectName $objectSql)) { continue }
+
+        ApplyProcedure $objectType $objectName $objectSql
+        LogObject $objectType $objectName $objectSql
+    }
+}
+
 ###################################################
 ## Script main start                             ##
 ###################################################
 
- cls
+if ($clearScreenOnStart -eq $true) { cls }
 
- EnsureDbExists
+Write-Host "Connection string: $connectionString"
+Write-Host "Script path: $scriptPath"
 
- $changesetFile = cat changesets.txt
-
- foreach($change in $changesetFile){ 
-    $scriptpath = $MyInvocation.MyCommand.Path
-    $dir = Split-Path $scriptpath
-    $changeFilesSqlPattern = join-path $dir "changesets/$change/*.sql"
-
-    $sqlFiles = ls $changeFilesSqlPattern
-
-    $alreadyRunScripts = GetAlreadyRunScripts
- 
-    $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
- 
-    foreach($sqlFile in $sqlFilesToRun) {
-        $changeSetAndFilename = BuildChangeString  $change $sqlFile.Name
-        RunSqlFile $sqlFile $changeSetAndFilename
-    }
- }
+EnsureDbExists
+ApplyChangesets
+ApplyProcedures
