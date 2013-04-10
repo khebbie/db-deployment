@@ -1,7 +1,7 @@
 param(
     $connectionString = "Data Source=.;Initial Catalog=MyDatabase;Integrated Security=True",
     $scriptpath = (Resolve-Path .),
-    $clearScreenOnStart = $true
+    $clearScreenOnStart = $false
 )
 
 #todo
@@ -9,14 +9,14 @@ param(
 #follow up on errors in the, for instance don't run a script with more than x errors
 
 $CreateChangesTableSql="if not exists (select * from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'db_changes')
-    create table db_changes (
+    create table dbo.db_changes (
         ChangeSet  varchar(255)  NOT NULL
             CONSTRAINT PK_db_changes PRIMARY KEY
 		, ChangeDate  DateTime  NOT NULL
     )"
 
 $CreateObjectsTableSql="if not exists (select * from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'db_objects')
-    create table db_objects (
+    create table dbo.db_objects (
         ObjectType  varchar(100)  NOT NULL
         , ObjectName  varchar(200)  NOT NULL
         , ObjectSql  nvarchar(max)  NOT NULL
