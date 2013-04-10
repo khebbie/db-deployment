@@ -111,11 +111,14 @@ function ApplyChangeset ($change) {
     $sqlFiles = ls $changeFilesSqlPattern
     $alreadyRunScripts = GetAlreadyRunScripts
     $sqlFilesToRun = $sqlFiles | where { $alreadyRunScripts.ChangeSet -notcontains (BuildChangeString $change $_.Name)}
-    foreach($sqlFile in $sqlFilesToRun) {
-        $sqlFileName = $sqlFile.Name
-        $changeSetAndFilename = BuildChangeString $change $sqlFileName
-        Write-Host "Applying changeset '$changeSetAndFilename'."
-        RunSqlFile $sqlFile $changeSetAndFilename
+    if($sqlFilesToRun.Count -gt 0)
+    {
+        foreach($sqlFile in $sqlFilesToRun) {
+            $sqlFileName = $sqlFile.Name
+            $changeSetAndFilename = BuildChangeString $change $sqlFileName
+            Write-Host "Applying changeset '$changeSetAndFilename'."
+            RunSqlFile $sqlFile $changeSetAndFilename
+        }
     }
 }
 
