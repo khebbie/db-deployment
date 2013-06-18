@@ -95,9 +95,9 @@ function EnsureDbExists(){
      pSql_execute_nonQuery $content $connectionString
      MarkScriptAsRun($nameToMark)
      }
-     catch {
+     catch [Exception] {
      Write-Host "File not run or run with errors" $file 
-     $error[0]
+     $_.Exception
      }
  }
 
