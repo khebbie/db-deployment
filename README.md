@@ -31,8 +31,8 @@ So this folder structure could be one way of doing it
 </pre>
 
 The changesets.txt would simply look like this:  
-    CreateTable  
-    AddColumnToTable  
+     CreateTable  
+     AddColumnToTable  
 
 Internal Stuff
 --------------
