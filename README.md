@@ -30,9 +30,9 @@ So this folder structure could be one way of doing it
 \-changesets.txt
 </pre>
 
-The changesets.txt would simply look like this:</br>
-CreateTable  
-AddColumnToTable  
+The changesets.txt would simply look like this:  
+    CreateTable  
+    AddColumnToTable  
 
 Internal Stuff
 --------------
